@@ -1,8 +1,8 @@
 #include <stdio.h>
-
+#include<windows.h>
 #include "hello.h"
 
 void Hello() {
-    sleep(3);
+    Sleep(3000);
     printf("Hello, world!\n");
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/simin/wondshare/service"
@@ -37,6 +38,10 @@ func main() {
 		Password: "",
 		DB:       0,
 	})
+	_, err = redisClient.Ping(context.Background()).Result()
+	if err != nil {
+		log.Fatal("Failed to connect to redis: ", err)
+	}
 
 	// 注册路由
 	http.HandleFunc("/create_task", createTaskHandler)
@@ -78,11 +83,13 @@ func createTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 将task id返回给客户端
 	fmt.Fprint(w, id)
+	log.Println("Task created:", id)
 }
 
 func queryTaskHandler(w http.ResponseWriter, r *http.Request) {
 	// 获取task id
 	id := r.URL.Query().Get("id")
+	log.Println("querying task:", id)
 
 	// 从redis中获取task状态
 	status, err := redisClient.Get(r.Context(), id).Result()
@@ -111,7 +118,6 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 将task状态写入redis
-	log.Println(status)
 	err = redisClient.Set(r.Context(), status.ID, status.Status, 0).Err()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -120,4 +126,5 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 返回成功状态给算法服务
 	fmt.Fprint(w, "OK")
+	log.Printf("callback task:%s status: %s\n", status.ID, status.Status)
 }
