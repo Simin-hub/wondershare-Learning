@@ -1,0 +1,35 @@
+version: '3.0'
+services:
+  redis:
+    image: redis
+    volumes:
+      #Redis持久化数据映射
+      - ./data/redis:/data
+      #准备自己的redis配置文件，包含redis连接密码
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      #redis存储路径
+      - ./logs/redis:/logs
+    ports:
+      - "6379:6379"
+    networks:
+      - wondshare
+    # 容器启动后在容器中执行的命令，启动redis,appendonly参数可用来持久化redis数据参数
+    command: "/usr/local/bin/redis-server /usr/local/etc/redis/redis.conf --appendonly yes"
+    restart: always
+
+  rabbitmq:
+    image: rabbitmq
+    volumes:
+      - ./data/rabbitmq:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    # 引用当前路径下的.env文件中的RABBITMQ_DEFAULT_USER和RABBITMQ_DEFAULT_PASS参数
+#    env_file:
+#      - ./.env
+    restart: always
+    networks:
+      - wondshare
+
+networks:
+  wondshare:
