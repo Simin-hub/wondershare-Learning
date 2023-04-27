@@ -25,8 +25,8 @@ services:
       - "5672:5672"
       - "15672:15672"
     # 引用当前路径下的.env文件中的RABBITMQ_DEFAULT_USER和RABBITMQ_DEFAULT_PASS参数
-#    env_file:
-#      - ./.env
+    env_file:
+      - ./.env
     restart: always
     networks:
       - wondshare

@@ -20,7 +20,7 @@ func main() {
 
 	// 注册路由
 	router := gin.Default()
-	router.POST("/task", createTask)
+	router.GET("/task", createTask)
 	router.GET("/task/:id", queryTask)
 	router.DELETE("/task/:id", cancelTask)
 	router.POST("/task/:id/status", updateTaskStatus)
@@ -45,7 +45,7 @@ func createTask(c *gin.Context) {
 func queryTask(c *gin.Context) {
 	// 获取task id
 	id := c.Param("id")
-	task, err := service.QueryTask(id, context.Background())
+	task, err := service.QueryTask(context.Background(), id)
 	if err == redis.Nil {
 		// 如果task不存在，返回404
 		c.JSON(http.StatusNotFound, nil)
@@ -65,7 +65,7 @@ func updateTaskStatus(c *gin.Context) {
 	if err != nil {
 		c.String(http.StatusBadRequest, err.Error())
 	}
-	err = service.UpdateTaskStatus(id, task.Status, context.Background())
+	err = service.UpdateTaskStatus(context.Background(), id, task.Status)
 	if err != nil {
 		c.String(http.StatusBadRequest, err.Error())
 		return
@@ -76,7 +76,7 @@ func updateTaskStatus(c *gin.Context) {
 
 func cancelTask(c *gin.Context) {
 	id := c.Param("id")
-	err := service.CancelTask(id, context.Background())
+	err := service.CancelTask(context.Background(), id)
 	if err != nil {
 		c.String(http.StatusBadRequest, err.Error())
 		return
@@ -91,7 +91,7 @@ func updateTaskProcess(c *gin.Context) {
 	if err != nil {
 		c.String(http.StatusBadRequest, err.Error())
 	}
-	err = service.UpdateTaskProgress(id, task.Process, context.Background())
+	err = service.UpdateTaskProgress(context.Background(), id, task.Process)
 	if err != nil {
 		c.String(http.StatusBadRequest, err.Error())
 		return

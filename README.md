@@ -62,6 +62,14 @@ go get github.com/rabbitmq/amqp091-go
 
 6、RabbitMQ Broker收到ack之后将对应的消息从队列里面删除掉。
 
+### 开启图形界面插件
+
+```
+rabbitmq-plugins enable rabbitmq_management
+```
+
+
+
 ## 完成记录
 
 tag v0.1 实现了创建任务、查询任务、生产消息、消费消息、回调接口返回任务完成

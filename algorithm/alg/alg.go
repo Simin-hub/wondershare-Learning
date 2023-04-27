@@ -16,26 +16,21 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 )
 
 var cancelTask sync.Map
 
 func main() {
 	// 连接mq
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	conn, err := amqp.Dial("amqp://root:root@localhost:5672/")
 	if err != nil {
 		log.Fatal("Failed to connect to RabbitMQ: ", err)
 	}
 	defer conn.Close()
 
-	ch, err := conn.Channel()
-	if err != nil {
-		log.Fatal("Failed to open a channel: ", err)
-	}
-	defer ch.Close()
-
-	conuserQue := getConsume(ch, TASK_QUEUQ)
-	cancelQue := getConsume(ch, CANCEL_QUEUE)
+	conuserQue := getConsume(conn, TASK_QUEUQ)
+	cancelQue := getConsume(conn, CANCEL_QUEUE)
 
 	ctx := context.Background()
 
@@ -43,11 +38,17 @@ func main() {
 	go cancelMQ(ctx, cancelQue)
 
 	forever := make(chan bool)
+	println("Start processing tasks")
 	// 阻塞主进程
 	<-forever
 }
 
-func getConsume(ch *amqp.Channel, queName string) <-chan amqp.Delivery {
+func getConsume(conn *amqp.Connection, queName string) <-chan amqp.Delivery {
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatal("Failed to open a channel: ", err)
+	}
+
 	// 声明队列
 	q, err := ch.QueueDeclare(
 		queName, // 队列名称
@@ -88,29 +89,44 @@ func consuming(ctx context.Context, msgs <-chan amqp.Delivery) {
 			log.Println("Ongoing consumption task: ", task.ID)
 		}
 
-		// 模拟算法处理, 设置函数执行超时设置
-		task.Process = "0"
+		// 模拟算法处理
+		task.Process, task.Status = "0", TASK_COMPLETED
 		err = updateTaskStatus(task.ID, TASK_PROCESSING, task.Process)
 		if err != nil {
 			_ = updateTaskStatus(task.ID, TASK_ERROR, task.Process)
 		}
-		cancel, status := false, TASK_COMPLETED
-		for i := 1; i <= 10; i++ {
-			C.Hello()
-			task.Process = strconv.Itoa(i * 10)
-			err = updateTaskProcess(task.ID, TASK_PROCESSING, task.Process)
-			if _, cancel = cancelTask.Load(task.ID); cancel {
-				status = TASK_CANCELLED
-				break
+
+		// timeout 超时设置
+		child, cancelFunc := context.WithTimeout(ctx, time.Second*50)
+		go func() {
+			for i := 1; i <= 10; i++ {
+				// 检查任务是否超时
+				if child.Err() != nil {
+					task.Status = TASK_TIMEDOUT
+					break
+				}
+				if _, ok := cancelTask.LoadAndDelete(task.ID); ok {
+					task.Status = TASK_CANCELLED
+					break
+				}
+				C.Hello()
+				task.Process = strconv.Itoa(i * 10)
+				err = updateTaskProcess(task.ID, TASK_PROCESSING, task.Process)
+				log.Printf("Task id:%s\t process:%s\t", task.ID, task.Process)
 			}
+			cancelFunc()
+		}()
+		// 等待任务完成或者超时
+		select {
+		case <-child.Done():
 		}
-		err = updateTaskStatus(task.ID, status, task.Process)
+		err = updateTaskStatus(task.ID, task.Status, task.Process)
 		if err != nil {
 			log.Println(err)
 		}
 		// 确认消息已发送
 		d.Ack(false)
-		log.Println("Task completion: ", task.ID)
+		log.Printf("Task completion: %s,\t status: %s\n", task.ID, task.Status)
 	}
 }
 
