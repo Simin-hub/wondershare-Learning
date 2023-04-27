@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	. "github.com/simin/wondshare/service"
 	"github.com/streadway/amqp"
@@ -30,12 +31,12 @@ func main() {
 	defer conn.Close()
 
 	conuserQue := getConsume(conn, TASK_QUEUQ)
-	cancelQue := getConsume(conn, CANCEL_QUEUE)
+	//cancelQue := getConsume(conn, CANCEL_QUEUE)
 
 	ctx := context.Background()
 
 	go consuming(ctx, conuserQue)
-	go cancelMQ(ctx, cancelQue)
+	//go cancelMQ(ctx, cancelQue)
 
 	forever := make(chan bool)
 	println("Start processing tasks")
@@ -93,7 +94,10 @@ func consuming(ctx context.Context, msgs <-chan amqp.Delivery) {
 		task.Process, task.Status = "0", TASK_COMPLETED
 		err = updateTaskStatus(task.ID, TASK_PROCESSING, task.Process)
 		if err != nil {
-			_ = updateTaskStatus(task.ID, TASK_ERROR, task.Process)
+			// 确认消息已发送
+			d.Ack(false)
+			log.Printf("The task %s has been cancelled or does not exist. ", task.ID)
+			break
 		}
 
 		// timeout 超时设置
@@ -112,6 +116,12 @@ func consuming(ctx context.Context, msgs <-chan amqp.Delivery) {
 				C.Hello()
 				task.Process = strconv.Itoa(i * 10)
 				err = updateTaskProcess(task.ID, TASK_PROCESSING, task.Process)
+				if err != nil {
+					// 确认消息已发送
+					d.Ack(false)
+					log.Printf("The task %s has been cancelled or does not exist. ", task.ID)
+					break
+				}
 				log.Printf("Task id:%s\t process:%s\t", task.ID, task.Process)
 			}
 			cancelFunc()
@@ -122,7 +132,10 @@ func consuming(ctx context.Context, msgs <-chan amqp.Delivery) {
 		}
 		err = updateTaskStatus(task.ID, task.Status, task.Process)
 		if err != nil {
-			log.Println(err)
+			// 确认消息已发送
+			d.Ack(false)
+			log.Printf("The task %s has been cancelled or does not exist. ", task.ID)
+			break
 		}
 		// 确认消息已发送
 		d.Ack(false)
@@ -141,10 +154,16 @@ func updateTaskProcess(id string, status string, process string) error {
 		log.Println("Failed to encode task status: ", err)
 	}
 
-	_, err = http.Post(
+	resp, err := http.Post(
 		fmt.Sprintf("http://localhost:8080/task/%s/process", task.ID),
 		"application/json", bytes.NewBuffer(taskJson))
-	return err
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != 200 {
+		return errors.New("the task has been cancelled or does not exist")
+	}
+	return nil
 }
 
 func updateTaskStatus(id string, status string, process string) error {

@@ -100,8 +100,16 @@ func (s *AlgService) QueryTask(ctx context.Context, id string) (*Task, error) {
 }
 
 func (s *AlgService) UpdateTaskStatus(ctx context.Context, id string, status string) error {
+	// 查询任务是否存在或者是否取消
+	task, err := s.QueryTask(ctx, id)
+	if err != nil {
+		return err
+	}
+	if task.Status == TASK_CANCELLED {
+		return errors.New(fmt.Sprint("task canceled : ", id))
+	}
 	// 将task状态写入redis
-	err := s.RedisClient.HSet(ctx, id, "status", status).Err()
+	err = s.RedisClient.HSet(ctx, id, "status", status).Err()
 	if err != nil {
 		return errors.New(fmt.Sprint("Failed to update task status : ", id))
 	}
@@ -109,8 +117,16 @@ func (s *AlgService) UpdateTaskStatus(ctx context.Context, id string, status str
 }
 
 func (s *AlgService) UpdateTaskProgress(ctx context.Context, id string, process string) error {
+	// 查询任务是否存在或者是否取消
+	task, err := s.QueryTask(ctx, id)
+	if err != nil {
+		return err
+	}
+	if task.Status == TASK_CANCELLED {
+		return errors.New(fmt.Sprint("task canceled : ", id))
+	}
 	// 将task进度写入redis
-	err := s.RedisClient.HSet(ctx, id, "process", process).Err()
+	err = s.RedisClient.HSet(ctx, id, "process", process).Err()
 	if err != nil {
 		return errors.New(fmt.Sprint("Failed to update task process : ", id))
 	}
@@ -123,40 +139,15 @@ func (s *AlgService) CancelTask(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	err = s.UpdateTaskStatus(ctx, id, TASK_CANCELLED)
+
 	if task.Status == TASK_CANCELLED {
 		return nil
-	} else if task.Status == TASK_COMPLETED {
+	}
+	err = s.UpdateTaskStatus(ctx, id, TASK_CANCELLED)
+	if err != nil {
 		return err
 	}
 
-	taskJson, err := json.Marshal(task)
-	if err != nil {
-		return err
-	}
-	q, err := s.MqChan[CANCEL_QUEUE].QueueDeclare(
-		CANCEL_QUEUE, // name 队列名称
-		false,        // durable 持久化
-		false,        // delete when unused 自动删除
-		false,        // exclusive 独占队列
-		false,        // no-wait 是否阻塞
-		nil,          // arguments
-	)
-	if err != nil {
-		return err
-	}
-	err = s.MqChan[CANCEL_QUEUE].Publish(
-		"",
-		q.Name, // 队列名称
-		false,
-		false,
-		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        taskJson,
-		})
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
