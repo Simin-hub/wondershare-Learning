@@ -18,7 +18,7 @@ func main() {
 		log.Fatalf("Failed to create service: %v", err)
 	}
 
-	// 注册路由
+	// Registered Routing
 	router := gin.Default()
 	router.GET("/task", createTask)
 	router.GET("/task/:id", queryTask)
@@ -26,7 +26,7 @@ func main() {
 	router.POST("/task/:id/status", updateTaskStatus)
 	router.POST("/task/:id/process", updateTaskProcess)
 
-	// 启动http服务器
+	// Start the http server
 	if err := router.Run(":8080"); err != nil {
 		log.Fatalf("failed to start server: %s", err)
 	}
@@ -38,22 +38,19 @@ func createTask(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "failed to create task : %s", err)
 		return
 	}
-	// 将task id返回给客户端
+	// Return the task id to the client
 	c.String(http.StatusOK, task)
 }
 
 func queryTask(c *gin.Context) {
-	// 获取task id
+	// Get task id
 	id := c.Param("id")
 	task, err := service.QueryTask(context.Background(), id)
 	if err == redis.Nil {
-		// 如果task不存在，返回404
 		c.JSON(http.StatusNotFound, nil)
 	} else if err != nil {
-		// 如果出现其他错误，返回500
 		c.JSON(http.StatusInternalServerError, nil)
 	} else {
-		// 返回task状态
 		c.JSON(http.StatusOK, *task)
 	}
 }
@@ -70,7 +67,7 @@ func updateTaskStatus(c *gin.Context) {
 		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
-	// 返回成功状态给算法服务
+	// Return success status to the algorithm service
 	c.String(http.StatusOK, "OK")
 }
 
@@ -96,6 +93,6 @@ func updateTaskProcess(c *gin.Context) {
 		c.String(http.StatusBadRequest, err.Error())
 		return
 	}
-	// 返回成功状态给算法服务
+	// Return success status to the algorithm service
 	c.String(http.StatusOK, "OK")
 }

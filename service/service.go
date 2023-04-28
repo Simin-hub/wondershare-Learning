@@ -32,8 +32,8 @@ type Service interface {
 	CreateTask(context.Context) (string, error)
 	QueryTask(context.Context, string) (*Task, error)
 	CancelTask(context.Context, string) error
-	UpdateTaskStatus(context.Context, string, string) error   // 更新任务
-	UpdateTaskProgress(context.Context, string, string) error // 更新任务进度
+	UpdateTaskStatus(context.Context, string, string) error
+	UpdateTaskProgress(context.Context, string, string) error
 }
 
 type AlgService struct {
@@ -41,31 +41,34 @@ type AlgService struct {
 	RedisClient *redis.Client
 }
 
+// CreateTask function Create a task and send it to the message queue,
+//returning the task id
 func (s *AlgService) CreateTask(ctx context.Context) (string, error) {
-	// 生成task id
+	// Create Task
 	task := &Task{
 		uuid.NewString(),
 		TASK_PENDING,
 		"0",
 	}
-	// 序列化
+	// Serialization of tasks
 	taskJson, err := json.Marshal(task)
 
-	// 将task信息发送到mq 首先声明一个队列，然后向队列中发送消息
+	// Send task information to mq First declare a queue, then send a message to the queue
 	q, err := s.MqChan[TASK_QUEUQ].QueueDeclare(
-		TASK_QUEUQ, // name 队列名称
-		false,      // durable 持久化
-		false,      // delete when unused 自动删除
-		false,      // exclusive 独占队列
-		false,      // no-wait 是否阻塞
-		nil,        // arguments
+		TASK_QUEUQ,
+		false,
+		false,
+		false,
+		false,
+		nil,
 	)
 	if err != nil {
 		return "", err
 	}
+
 	err = s.MqChan[TASK_QUEUQ].Publish(
 		"",
-		q.Name, // 队列名称
+		q.Name,
 		false,
 		false,
 		amqp.Publishing{
@@ -75,15 +78,20 @@ func (s *AlgService) CreateTask(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	// Save the status and progress of a task
 	err = s.RedisClient.HSet(ctx, task.ID, "status", task.Status).Err()
 	err = s.RedisClient.HSet(ctx, task.ID, "process", task.Process).Err()
 	if err != nil {
 		return "", err
 	}
+
 	return task.ID, nil
 }
 
+// QueryTask function query tasks by task id
 func (s *AlgService) QueryTask(ctx context.Context, id string) (*Task, error) {
+	// Query whether a task exists
 	status, err := s.RedisClient.HGet(ctx, id, "status").Result()
 	if err != nil {
 		return nil, err
@@ -92,6 +100,7 @@ func (s *AlgService) QueryTask(ctx context.Context, id string) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	// return to task
 	return &Task{
 		id,
 		status,
@@ -99,8 +108,9 @@ func (s *AlgService) QueryTask(ctx context.Context, id string) (*Task, error) {
 	}, nil
 }
 
+// UpdateTaskStatus function update tasks by task id
 func (s *AlgService) UpdateTaskStatus(ctx context.Context, id string, status string) error {
-	// 查询任务是否存在或者是否取消
+	// First check if the task exists
 	task, err := s.QueryTask(ctx, id)
 	if err != nil {
 		return err
@@ -108,7 +118,7 @@ func (s *AlgService) UpdateTaskStatus(ctx context.Context, id string, status str
 	if task.Status == TASK_CANCELLED {
 		return errors.New(fmt.Sprint("task canceled : ", id))
 	}
-	// 将task状态写入redis
+	// Writing task status to redis
 	err = s.RedisClient.HSet(ctx, id, "status", status).Err()
 	if err != nil {
 		return errors.New(fmt.Sprint("Failed to update task status : ", id))
@@ -116,8 +126,9 @@ func (s *AlgService) UpdateTaskStatus(ctx context.Context, id string, status str
 	return nil
 }
 
+// UpdateTaskProgress function update tasks by task id
 func (s *AlgService) UpdateTaskProgress(ctx context.Context, id string, process string) error {
-	// 查询任务是否存在或者是否取消
+	// First check if the task exists
 	task, err := s.QueryTask(ctx, id)
 	if err != nil {
 		return err
@@ -125,7 +136,7 @@ func (s *AlgService) UpdateTaskProgress(ctx context.Context, id string, process 
 	if task.Status == TASK_CANCELLED {
 		return errors.New(fmt.Sprint("task canceled : ", id))
 	}
-	// 将task进度写入redis
+	// Writing task process to redis
 	err = s.RedisClient.HSet(ctx, id, "process", process).Err()
 	if err != nil {
 		return errors.New(fmt.Sprint("Failed to update task process : ", id))
@@ -133,8 +144,9 @@ func (s *AlgService) UpdateTaskProgress(ctx context.Context, id string, process 
 	return nil
 }
 
+// CancelTask function Cancel tasks by task id
 func (s *AlgService) CancelTask(ctx context.Context, id string) error {
-
+	// First check if the task exists
 	task, err := s.QueryTask(ctx, id)
 	if err != nil {
 		return err
@@ -143,6 +155,8 @@ func (s *AlgService) CancelTask(ctx context.Context, id string) error {
 	if task.Status == TASK_CANCELLED {
 		return nil
 	}
+
+	// Update task status to cancelled
 	err = s.UpdateTaskStatus(ctx, id, TASK_CANCELLED)
 	if err != nil {
 		return err
@@ -151,16 +165,19 @@ func (s *AlgService) CancelTask(ctx context.Context, id string) error {
 	return nil
 }
 
+// NewService function creating a server instance
 func NewService() (*AlgService, error) {
-	// 初始化mq连接和redis连接
-	// 连接RabbitMQ服务
-	// 配置连接套接字，它主要定义连接的协议和身份验证等。
+	// Initialize mq connections and redis connections
+	// Connect to the RabbitMQ service
+	// Configure the connection sockets, which mainly define the protocol
+	// and authentication of the connection, etc.
 	mqConn, err := amqp.Dial("amqp://root:root@localhost:5672/")
 	if err != nil {
 		mqConn.Close()
 		log.Fatal("Failed to connect to RabbitMQ: ", err)
 	}
 
+	// Create task creation queue channel
 	mqChan := make(map[string]*amqp.Channel)
 	mqChan[TASK_QUEUQ], err = mqConn.Channel()
 	if err != nil {
@@ -168,11 +185,11 @@ func NewService() (*AlgService, error) {
 		log.Fatal("Failed to open a channel: ", err)
 	}
 
-	mqChan[CANCEL_QUEUE], err = mqConn.Channel()
-	if err != nil {
-		mqChan[TASK_QUEUQ].Close()
-		log.Fatal("Failed to open a channel: ", err)
-	}
+	//mqChan[CANCEL_QUEUE], err = mqConn.Channel()
+	//if err != nil {
+	//	mqChan[TASK_QUEUQ].Close()
+	//	log.Fatal("Failed to open a channel: ", err)
+	//}
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",

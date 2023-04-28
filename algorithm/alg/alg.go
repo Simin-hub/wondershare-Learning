@@ -23,54 +23,53 @@ import (
 var cancelTask sync.Map
 
 func main() {
-	// 连接mq
+	// Creating a RabbitMQ connection
 	conn, err := amqp.Dial("amqp://root:root@localhost:5672/")
 	if err != nil {
 		log.Fatal("Failed to connect to RabbitMQ: ", err)
 	}
 	defer conn.Close()
 
-	conuserQue := getConsume(conn, TASK_QUEUQ)
+	// Get the consumption queue
+	ConsuDelvi := getConsume(conn, TASK_QUEUQ)
 	//cancelQue := getConsume(conn, CANCEL_QUEUE)
 
 	ctx := context.Background()
-
-	go consuming(ctx, conuserQue)
+	// Open goroutine consuming messages
+	go consuming(ctx, ConsuDelvi)
 	//go cancelMQ(ctx, cancelQue)
 
 	forever := make(chan bool)
 	println("Start processing tasks")
-	// 阻塞主进程
 	<-forever
 }
 
+// getConsume get consumer delivery queue
 func getConsume(conn *amqp.Connection, queName string) <-chan amqp.Delivery {
 	ch, err := conn.Channel()
 	if err != nil {
 		log.Fatal("Failed to open a channel: ", err)
 	}
 
-	// 声明队列
 	q, err := ch.QueueDeclare(
-		queName, // 队列名称
-		false,   // 队列持久化
-		false,   // 不自动删除队列
-		false,   // 不独占队列
-		false,   // 不等待队列消费者
+		queName,
+		false,
+		false,
+		false,
+		false,
 		nil,
 	)
 	if err != nil {
 		log.Fatal("Failed to declare a queue: ", err)
 	}
 
-	// 消费队列中的消息
 	msgs, err := ch.Consume(
-		q.Name, // 队列名称
-		"",     // 消费者名称
-		false,  // 关闭自动确认
-		false,  // 不独占队列
-		false,  // 不等待队列消费者
-		false,  // 不阻塞
+		q.Name,
+		"",
+		false,
+		false,
+		false,
+		false,
 		nil,
 	)
 	if err != nil {
@@ -79,8 +78,10 @@ func getConsume(conn *amqp.Connection, queName string) <-chan amqp.Delivery {
 	return msgs
 }
 
+// Consuming task
 func consuming(ctx context.Context, msgs <-chan amqp.Delivery) {
 	for d := range msgs {
+		// decode message
 		task := &Task{}
 		err := json.Unmarshal(d.Body, task)
 		if err != nil {
@@ -90,34 +91,36 @@ func consuming(ctx context.Context, msgs <-chan amqp.Delivery) {
 			log.Println("Ongoing consumption task: ", task.ID)
 		}
 
-		// 模拟算法处理
+		// Simulation algorithm processing
 		task.Process, task.Status = "0", TASK_COMPLETED
 		err = updateTaskStatus(task.ID, TASK_PROCESSING, task.Process)
 		if err != nil {
-			// 确认消息已发送
+			// updating the task status fails
 			d.Ack(false)
 			log.Printf("The task %s has been cancelled or does not exist. ", task.ID)
 			break
 		}
 
-		// timeout 超时设置
+		// Task timeout settings handling
 		child, cancelFunc := context.WithTimeout(ctx, time.Second*50)
 		go func() {
 			for i := 1; i <= 10; i++ {
-				// 检查任务是否超时
+				// Check for task timeout
 				if child.Err() != nil {
 					task.Status = TASK_TIMEDOUT
 					break
 				}
-				if _, ok := cancelTask.LoadAndDelete(task.ID); ok {
-					task.Status = TASK_CANCELLED
-					break
-				}
+
+				//if _, ok := cancelTask.LoadAndDelete(task.ID); ok {
+				//	task.Status = TASK_CANCELLED
+				//	break
+				//}
+
 				C.Hello()
 				task.Process = strconv.Itoa(i * 10)
 				err = updateTaskProcess(task.ID, TASK_PROCESSING, task.Process)
 				if err != nil {
-					// 确认消息已发送
+					// updating the task process fails
 					d.Ack(false)
 					log.Printf("The task %s has been cancelled or does not exist. ", task.ID)
 					break
@@ -126,23 +129,23 @@ func consuming(ctx context.Context, msgs <-chan amqp.Delivery) {
 			}
 			cancelFunc()
 		}()
-		// 等待任务完成或者超时
+
+		// Wait for task completion or timeout
 		select {
 		case <-child.Done():
 		}
+
 		err = updateTaskStatus(task.ID, task.Status, task.Process)
 		if err != nil {
-			// 确认消息已发送
 			d.Ack(false)
 			log.Printf("The task %s has been cancelled or does not exist. ", task.ID)
 			break
 		}
-		// 确认消息已发送
 		d.Ack(false)
-		log.Printf("Task completion: %s,\t status: %s\n", task.ID, task.Status)
 	}
 }
 
+// updateTaskStatus updates the process of the task
 func updateTaskProcess(id string, status string, process string) error {
 	task := &Task{
 		id,
@@ -154,18 +157,23 @@ func updateTaskProcess(id string, status string, process string) error {
 		log.Println("Failed to encode task status: ", err)
 	}
 
+	// Request to API server to modify task progress
 	resp, err := http.Post(
 		fmt.Sprintf("http://localhost:8080/task/%s/process", task.ID),
 		"application/json", bytes.NewBuffer(taskJson))
 	if err != nil {
+		// Request error
 		return err
 	}
+
+	// Whether the requested task status is cancelled or does not exist
 	if resp.StatusCode != 200 {
 		return errors.New("the task has been cancelled or does not exist")
 	}
 	return nil
 }
 
+// updateTaskStatus updates the status of the task
 func updateTaskStatus(id string, status string, process string) error {
 	task := &Task{
 		id,
@@ -177,10 +185,20 @@ func updateTaskStatus(id string, status string, process string) error {
 		log.Println("Failed to encode task status: ", err)
 	}
 
-	_, err = http.Post(
+	// Request to API server to modify task progress, resp indicates a response to a request
+	resp, err := http.Post(
 		fmt.Sprintf("http://localhost:8080/task/%s/status", task.ID),
 		"application/json", bytes.NewBuffer(taskJson))
-	return err
+	if err != nil {
+		// Request error
+		return err
+	}
+
+	// Whether the requested task status is cancelled or does not exist
+	if resp.StatusCode != 200 {
+		return errors.New("the task has been cancelled or does not exist")
+	}
+	return nil
 }
 
 func cancelMQ(ctx context.Context, msgs <-chan amqp.Delivery) {
