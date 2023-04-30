@@ -1,5 +1,7 @@
 # README
 
+[项目地址](https://github.com/Simin-hub/wondershare-Learning)
+
 ## 任务要求：
 
 用golang实现两个服务: api服务和算法服务，两个服务通过mq通信;
@@ -98,6 +100,8 @@ tag v0.2.3 修改了部分取消任务的bug，在更新任务状态和进度时
 
 ## 设计思路
 
+API服务端实现了
+
 ### API服务端
 
 设计一个服务器接口
@@ -109,8 +113,8 @@ type Service interface {
 	CreateTask(context.Context) (string, error)
 	QueryTask(context.Context, string) (*Task, error)
 	CancelTask(context.Context, string) error
-	UpdateTaskStatus(context.Context, string, string) error   // 更新任务
-	UpdateTaskProgress(context.Context, string, string) error // 更新任务进度
+	UpdateTaskStatus(context.Context, string, string) error  
+	UpdateTaskProgress(context.Context, string, string) error 
 }
 ```
 
