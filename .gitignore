@@ -26,3 +26,5 @@ log/
 *.env
 *.conf
 go.sum
+*.zip
+*.o
